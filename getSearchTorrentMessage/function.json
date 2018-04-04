@@ -6,7 +6,7 @@
             "direction": "in",
             "queueName": "torrent-search-queue01",
             "connection": "ASTEN_TORRENT_SEARCH_CNX_SB01",
-            "accessRights": "Manage"
+            "accessRights": "Listen"
         }
     ],
     "disabled": false
