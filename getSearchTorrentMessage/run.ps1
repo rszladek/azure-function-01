@@ -4,6 +4,8 @@ Write-Output "[START] Function GetSearchTorrentMessage ..."
 # Service Bus trigger input
 $message = Get-Content $torrentSearchMessage -Raw
 
+Write-Output $message
+
 # Check if message is empty or not
 # messge empty nothing to do
 # message not empty launch other function

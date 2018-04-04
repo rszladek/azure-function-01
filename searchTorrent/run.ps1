@@ -22,3 +22,5 @@ $data = @(
 foreach ($raw in $data) {
     $result += Find-TorrentFile -Name $raw.Name -Season $raw.Season -StartEpisode $startEpisode
 }
+
+Write-Output $result
