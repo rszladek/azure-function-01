@@ -40,7 +40,7 @@ function Find-TorrentFile {
     $url = "http://www.torrent9.red/get_torrent/"
     $extensionFile = ".torrent"
     $seasonNumber = "{0:D2}" -f $Season
-    $endEpisode = 28
+    $endEpisode = 25
     $values = @()
 
     # Code Logic
@@ -53,7 +53,7 @@ function Find-TorrentFile {
             $requestUrl = $url + $Name + "-s" + $seasonNumber + "e" + $episodeNumber + "-vostfr-hdtv" + $extensionFile
             try {
                 Write-Verbose " [CHECK] url <$requestUrl> ..."
-                $request = Invoke-WebRequest -Uri $requestUrl
+                $request = Invoke-WebRequest -Uri $requestUrl -UseBasicParsing
                 $values += @{"Episode" = $episodeNumber; "URL" = $requestUrl; "Available" = $true; "ErrorMessage" = $null}
             }
             catch {
