@@ -1,13 +1,12 @@
 {
     "bindings": [
-        {
-            "name": "torrentSearchMessage",
-            "type": "serviceBusTrigger",
-            "direction": "in",
-            "queueName": "torrent-search-queue01",
-            "connection": "ASTEN_TORRENT_SEARCH_CNX_SB01",
-            "accessRights": "Listen"
-        }
-    ],
-    "disabled": false
-}
+      {
+        "name": "torrentSearchMessage",
+        "type": "serviceBusTrigger",
+        "direction": "in",
+        "queueName": "torrent-search-queue01",
+        "connection": "asten-torrent-search_RootManageSharedAccessKey_SERVICEBUS",
+        "accessRights": "Listen"
+      }
+    ]
+  }

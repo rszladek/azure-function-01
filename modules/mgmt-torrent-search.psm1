@@ -37,42 +37,51 @@ function Find-TorrentFile {
     )
     
     # Variables
-    $url = "http://www.torrent9.red/get_torrent/"
-    $extensionFile = ".torrent"
+    $url = "http://www.torrent9.red/search_torrent/"
+    $urlBaseSearch = $url + $name + "-"
+    $endSearch = "-vostfr.html"
     $seasonNumber = "{0:D2}" -f $Season
     $endEpisode = 25
     $values = @()
 
     # Code Logic
     Write-Verbose -Message "[SEARCH] Torrent <$Name> - <S$seasonNumber> from episode <$StartEpisode>"
-
-    try {
-        for ($i = $StartEpisode; $i -lt $endEpisode; $i++) {
-            # 2 digits format XX
-            $episodeNumber = "{0:D2}" -f $i
-            $requestUrl = $url + $Name + "-s" + $seasonNumber + "e" + $episodeNumber + "-vostfr-hdtv" + $extensionFile
-            try {
-                Write-Verbose " [CHECK] url <$requestUrl> ..."
-                $request = Invoke-WebRequest -Uri $requestUrl -UseBasicParsing
-                $values += @{"Episode" = $episodeNumber; "URL" = $requestUrl; "Available" = $true; "ErrorMessage" = $null}
+    # Search on all season
+    $requestUrl = $urlBaseSearch + "S" + $seasonNumber + $endSearch
+    Write-Verbose "[Search URL] $requestUrl"
+    $request = Invoke-WebRequest -UseBasicParsing -Uri $requestUrl -Method Get
+    Write-Verbose "$($request.StatusCode)"
+    # Search result need to be parsed
+    $links = $request.Links | Select-String "t*l*charger"
+    if ($links) {
+        Write-Verbose "[Found] $Name - $seasonNumber"
+        try {
+            for ($i = $StartEpisode; $i -lt $endEpisode; $i++) {
+                # 2 digits format XX
+                $episodeNumber = "{0:D2}" -f $i
+                $fullEpisodeNumber =  "S" + $seasonNumber + "E" + $episodeNumber
+                $searchEpisode = $links | Select-String $fullEpisodeNumber
+                if ($searchEpisode) {
+                    $values += @{"Episode" = $episodeNumber; "Available" = $true; "ErrorMessage" = $null}
+                } else {
+                    # Stop exexution and send details
+                    $values += @{"Episode" = $episodeNumber; "Available" = $false; "ErrorMessage" = "[404] Not Found"}
+                    $i = $endEpisode
+                }
             }
-            catch {
-                # Stop exexution and send details
-                $values += @{"Episode" = $episodeNumber; "URL" = $requestUrl; "Available" = $false; "ErrorMessage" = $_.Exception.Message}
-                $i = $endEpisode
-            }
-            # wait before next request
-            Start-Sleep -Seconds 5
+            # Return Result in JSON
+            $result = @{"Name" = $Name; "Season" = $seasonNumber; "Result" = $values}
         }
-
-        # Return Result in JSON
-        $result = @{"Name" = $Name; "Season" = $seasonNumber; "Result" = $values}
-        Write-Output $result | ConvertTo-JSON
+        catch {
+            # Send default exception
+            Write-Error -Message $_.Exception.Message -ErrorAction Stop
+        }
+    } else {
+        $failedValue = @{"Episode" = "[404] Not Found"; "Available" = $false; "ErrorMessage" = "[404] Not Found"}
+        $result = @{"Name" = $Name; "Season" = $seasonNumber; "Result" = $failedValue}
     }
-    catch {
-        # Send default exception
-        Write-Error -Message $_.Exception.Message -ErrorAction Stop
-    }
+    # Return result
+    Write-Output $result | ConvertTo-JSON
 }
 
 function Set-AzureServiceBusSASToken {
@@ -100,7 +109,7 @@ function Set-AzureServiceBusSASToken {
     )
 
     # Set Token Expiration
-    $endDate=[datetime]"4/11/2018 00:00"
+    $endDate=[datetime]"4/11/2019 00:00"
     $origin = [DateTime]"1/1/1970 00:00"
     $diff = New-TimeSpan -Start $origin -End $endDate
     $expiry = [Convert]::ToInt32($diff.TotalSeconds)
@@ -130,6 +139,7 @@ function Send-MessageTorrentAvailable {
     Send json data to Azure Service Bus
     .parameter Message
     Message must be formatted in Hashtable or JSON
+    
     .parameter SasToken
     Service Bus token format
     .notes
@@ -143,7 +153,7 @@ function Send-MessageTorrentAvailable {
     )
 
     # Variables
-    $uri = "https://asten-torrent-search-dev-sb01.servicebus.windows.net/torrent-search-queue01/messages"
+    $uri = "https://asten-torrent-search.servicebus.windows.net/torrent-search-queue01/messages"
     $headers = @{'Authorization'=$SasToken}
     $result = @()
     $errorStack = ""
@@ -180,4 +190,122 @@ function Send-MessageTorrentAvailable {
 
     # Return result
     Write-Output $result | ConvertTo-Json
+}
+
+
+function New-AzureStorageTableContext {
+    <#
+        .synopsis
+        Retrieve data from storage account table
+        .description
+        Retrieve data from storage account table
+        .parameter StorageAccountName
+                
+        .parameter StorageAccountKey
+
+        .parameter StorageTable
+       
+        .notes
+    #> 
+
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory=$true)]
+        [Object]$StorageAccountName,
+        [Parameter(Mandatory=$true)]
+        [String]$StorageAccountKey,          
+        [Parameter(Mandatory=$true)]
+        [String]$StorageTable  
+    )
+
+    try {
+        # SA Context
+        $ctx = New-AzureStorageContext -StorageAccountName $StorageAccountName -StorageAccountKey $StorageAccountKey -Protocol Https
+    }
+    catch {
+        # Failed to create SA ctx, stop execution
+        Write-Error -Message $_.Exception.Message -ErrorAction Stop
+    }
+
+    try {
+        # Get Azure Storage Table
+        $table = Get-AzureStorageTable -Name $StorageTable -Context $ctx
+    }
+    catch {
+        # Failed to get SA table, stop execution
+        Write-Error -Message $_.Exception.Message -ErrorAction Stop        
+    }
+
+    # return result
+    return $table
+
+}
+
+
+function Get-DataFromSATableByPartitionKey {
+    <#
+        .synopsis
+        Retrieve data from storage account table
+        .description
+        Retrieve data from storage account table
+        .parameter StorageTableContext
+
+        .parameter PartitionKey
+       
+        .notes
+    #>
+        [CmdletBinding()]
+        param (
+            [Parameter(Mandatory=$true)]
+            [Object]$StorageTableContext,
+            [Parameter(Mandatory=$true)]
+            [String]$PartitionKey            
+        )
+
+    try {
+        # Get azure storage table data with partition key
+        $data = Get-AzureStorageTableRowByPartitionKey -table $StorageTableContext -partitionKey $PartitionKey       
+    }
+    catch {
+        # Failed to get SA table data, stop execution
+        Write-Error -Message $_.Exception.Message -ErrorAction Stop        
+    }
+
+    # Return result
+    $data = $data | ConvertTo-Json
+    Write-Output $data
+}
+
+
+function Update-DataFromSATable {
+    <#
+        .synopsis
+        Update data from storage account table
+        .description
+        Update data from storage account table
+
+        .parameter StorageTableContext
+
+        .parameter Raw
+       
+        .notes
+    #>
+        [CmdletBinding()]
+        param (
+            [Parameter(Mandatory=$true)]
+            [Object]$StorageTableContext,
+            [Parameter(Mandatory=$true)]
+            [Object]$Raw         
+        )
+
+    try {
+        $update = Update-AzureStorageTableRow -table $StorageTableContext -entity $Raw
+    }
+    catch {
+         # Failed to get SA table data, stop execution
+         Write-Error -Message $_.Exception.Message      
+    }
+
+    # Return HTTP Status
+    Write-Output "[StatusCode] < $($update.HttpStatusCode) >"
 }
